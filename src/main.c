@@ -20,6 +20,7 @@
 
 #ifdef PICO
 #include "hardware/vreg.h"
+#include "hardware/clocks.h"
 #include "pico/binary_info.h"
 #include "pico/stdlib.h"
 #endif
@@ -236,7 +237,8 @@ int main()
 	// this is required for a stable 250MHz on some RP2040s
 	vreg_set_voltage(VREG_VOLTAGE_1_20);
 	sleep_ms(10);
-	set_sys_clock_khz(250000, 0);
+	//set_sys_clock_khz(250000, 0);
+	set_sys_clock_khz(150000, 0);
 	#endif
     stdio_init_all();
 #endif

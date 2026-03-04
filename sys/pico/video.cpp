@@ -11,7 +11,7 @@
 
 #define SCALE
 
-#define DISPLAY_WIDTH 240
+#define DISPLAY_WIDTH 320
 #define DISPLAY_HEIGHT 240
 
 // Display specific

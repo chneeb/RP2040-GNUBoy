@@ -21,6 +21,7 @@ gnuboy.rc
 *.bin
 /assets
 build/*
+build2/*
 saves/*
 cmake-*
 *.AppImage

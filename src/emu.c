@@ -72,8 +72,10 @@ void *sys_timer();
 
 void emu_run()
 {
+#ifndef PICO
 	void *timer = sys_timer();
 	int delay;
+#endif
 
 	vid_begin();
 	lcd_begin();
@@ -82,7 +84,7 @@ void emu_run()
 		cpu_emulate(2280);
 		while (R_LY > 0 && R_LY < 144)
 			emu_step();
-		
+
 		vid_end();
 		rtc_tick();
 		sound_mix();
@@ -93,14 +95,19 @@ void emu_run()
 			sys_sleep(delay);
 			sys_elapsed(timer);
 		}
+		#else
+		{
+			static int frame_timer = 0;
+			sys_sleep(framelen - sys_elapsed(&frame_timer));
+		}
 		#endif
 		doevents();
 		vid_begin();
 		if (framecount) { if (!--framecount) die("finished\n"); }
-		
+
 		if (!(R_LCDC & 0x80))
 			cpu_emulate(32832);
-		
+
 		while (R_LY > 0) /* wait for next frame */
 			emu_step();
 	}

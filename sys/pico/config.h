@@ -9,6 +9,8 @@
 #endif
 #endif
 
+#define DISPLAY_WIDTH 320
+
 #ifndef DISPLAY_WIDTH
 #ifdef DISPLAY_ST7789
 #define DISPLAY_WIDTH 240
