@@ -2,6 +2,8 @@
 
 
 
+#include <string.h>
+
 #include "defs.h"
 #include "pcm.h"
 #include "rc.h"

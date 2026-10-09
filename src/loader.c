@@ -233,7 +233,7 @@ int rom_load()
 
 	rlen = 16384 * mbc.romsize;
 	printf("rlen: %d\n", rlen);
-	rom.bank = rom_gb;
+	rom.bank = (byte (*)[16384])rom_gb;
 	
 	ram.sbank = malloc(8192 * mbc.ramsize);
 
