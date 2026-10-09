@@ -280,8 +280,11 @@ namespace st7789 {
         set_window(40, 53, 240, 135);
       }
 
-      if(width == 320 && height == 240)
+      if(width == 320 && height == 240) {
+        // rotate by 180 degrees to match the ResTouch's orientation
+        madctl |= MADCTL::ROW_ORDER | MADCTL::COL_ORDER;
         set_window(0, 0, 320, 240);
+      }
 
       command(reg::MADCTL,    1, (char *)&madctl);
     }

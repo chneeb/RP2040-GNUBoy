@@ -12,10 +12,11 @@
 
 #include "pico/binary_info.h"
 
-// NES Mini Classic controller via I2C1 on GPIO26 (SDA) / GPIO27 (SCL)
-#define NUNCHUCK_I2C  i2c1
-#define NUNCHUCK_SDA  26
-#define NUNCHUCK_SCL  27
+// NES Mini Classic controller via I2C0 on GPIO4 (SDA) / GPIO5 (SCL), the same
+// pins as rp2040-ili9341-infones on the ResTouch (GP26/27 are taken by an I2S DAC)
+#define NUNCHUCK_I2C  i2c0
+#define NUNCHUCK_SDA  4
+#define NUNCHUCK_SCL  5
 #define NUNCHUCK_ADDR 0x52
 
 static bool nunchuck_up, nunchuck_down, nunchuck_left, nunchuck_right;
