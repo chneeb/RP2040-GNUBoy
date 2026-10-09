@@ -99,7 +99,10 @@ namespace st7789 {
   #define SCK       10
   #define MOSI      11
   #define BACKLIGHT 13
-  #define RESET     12
+  #define RESET     15
+  // The ResTouch's touch controller and SD card share SCK/MOSI with the LCD
+  #define TOUCH_CS  16
+  #define SD_CS     22
 #endif
 
   static bool write_mode = false; // in RAMWR
@@ -178,6 +181,18 @@ namespace st7789 {
     gpio_set_function(BACKLIGHT, GPIO_FUNC_PWM);
 
     bi_decl_if_func_used(bi_1pin_with_name(BACKLIGHT, "Display Backlight"));
+#endif
+
+#ifdef TOUCH_CS
+    // Deselect the other devices on the bus, or they take the LCD traffic as
+    // commands. A confused touch controller stops signalling touches, which
+    // uf2loader relies on to enter its menu.
+    static const uint other_cs[] = {TOUCH_CS, SD_CS};
+    for (uint pin : other_cs) {
+      gpio_init(pin);
+      gpio_put(pin, 1);
+      gpio_set_dir(pin, GPIO_OUT);
+    }
 #endif
 
 #ifdef RESET
