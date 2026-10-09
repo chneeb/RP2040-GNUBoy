@@ -71,6 +71,17 @@ static void update_nunchuck() {
   if (!nunchuck_read(data))
     return;
 
+#if NUNCHUCK_DEBUG
+  // Print the raw button bytes (active low) over USB serial when they change
+  static uint8_t last6 = 0xFF, last7 = 0xFF;
+  if (data[6] != last6 || data[7] != last7) {
+    printf("nunchuck: %02x %02x %02x %02x %02x %02x | b6 %02x b7 %02x\n",
+           data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]);
+    last6 = data[6];
+    last7 = data[7];
+  }
+#endif
+
   // 8-bit format: bytes 0-5 are joystick/axis data (unused for NES Mini),
   // buttons are active low in bytes 6 and 7
   nunchuck_post(nunchuck_up,         K_JOYUP,    !(data[7] & 0x01));
