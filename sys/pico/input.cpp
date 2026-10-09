@@ -88,6 +88,14 @@ rcvar_t joy_exports[] =
 	RCV_END
 };
 
+// Buttons wired straight to GPIOs. Off by default: on the ResTouch these pins
+// carry the LCD reset, the touch controller and the SD card's SDIO lines, which
+// showed up as spurious presses next to the NES Mini controller.
+#ifndef INPUT_GPIO_BUTTONS
+#define INPUT_GPIO_BUTTONS 0
+#endif
+
+#if INPUT_GPIO_BUTTONS
 static bool left, right, up, down, a_btn, b_btn, x_btn, y_btn; 
 
 enum class ButtonIO {
@@ -147,9 +155,12 @@ void update_button(ButtonIO b, int code, bool& state) {
   }
 }
 
+#endif
+
 void init_input() {
   nunchuck_init();
 
+#if INPUT_GPIO_BUTTONS
   init_button(ButtonIO::UP);
   init_button(ButtonIO::DOWN);
   init_button(ButtonIO::LEFT);
@@ -169,8 +180,10 @@ void init_input() {
   BUTTON_DECL(X)
   BUTTON_DECL(Y)
   #undef BUTTON_DECL
+#endif
 }
 
+#if INPUT_GPIO_BUTTONS
 void update_input() {
   update_button(ButtonIO::LEFT,   K_JOYLEFT,  left  );
   update_button(ButtonIO::RIGHT,  K_JOYRIGHT, right );
@@ -182,9 +195,12 @@ void update_input() {
   update_button(ButtonIO::X, K_JOY2, x_btn);
   update_button(ButtonIO::Y, K_JOY3, y_btn);
 }
+#endif
 
 extern "C" void ev_poll()
 {
+#if INPUT_GPIO_BUTTONS
   update_input();
+#endif
   update_nunchuck();
 }
