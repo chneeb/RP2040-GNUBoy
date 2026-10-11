@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "rc.h"
 
@@ -8,6 +9,7 @@
 
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
+#include "hardware/irq.h"
 #include "pico/stdlib.h"
 
 #include "pico/binary_info.h"
@@ -21,6 +23,8 @@
 
 static bool nunchuck_up, nunchuck_down, nunchuck_left, nunchuck_right;
 static bool nunchuck_btn_a, nunchuck_btn_b, nunchuck_btn_start, nunchuck_btn_select;
+
+#define NUNCHUCK_I2C_HZ 100000
 
 // Every transfer gives up after this, so a misbehaving device on the bus can't
 // hang the emulator (8 bytes at 100kHz take under 1ms)
@@ -61,9 +65,29 @@ static void i2c_bus_recover() {
 static bool nunchuck_ready = false;
 #define NUNCHUCK_RETRY_MS 500
 
+// The LCD's DMA interrupt (DMA_IRQ_0, once per scanline with the 1.5x scaling)
+// is held back while the init sequence is sent. With it running, the
+// controller refused most init writes. Held back, the LCD waits at the end of
+// the current line and goes on afterwards.
+static void lcd_irq_hold(bool hold) {
+  irq_set_enabled(DMA_IRQ_0, !hold);
+}
+
+// A refused write is repeated a few times before the init gives up
+#define NUNCHUCK_WRITE_TRIES 5
+
 static bool nunchuck_write2(uint8_t reg, uint8_t value) {
   uint8_t buf[2] = {reg, value};
-  return i2c_write_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, buf, 2, false, NUNCHUCK_TIMEOUT_US) == 2;
+  for (int i = 0; i < NUNCHUCK_WRITE_TRIES; i++) {
+    int rc = i2c_write_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, buf, 2, false, NUNCHUCK_TIMEOUT_US);
+    if (rc == 2)
+      return true;
+#if NUNCHUCK_DEBUG
+    printf("nunchuck write %02x %02x: %d\n", reg, value, rc);
+#endif
+    sleep_ms(10);
+  }
+  return false;
 }
 
 // Unencrypted init, then data format 3 (8 byte reports, buttons in bytes 6
@@ -71,20 +95,25 @@ static bool nunchuck_write2(uint8_t reg, uint8_t value) {
 // for some of them, and a missed write left it in another format for good.
 static void nunchuck_init() {
   i2c_bus_recover();
-  i2c_init(NUNCHUCK_I2C, 100000);
+  i2c_init(NUNCHUCK_I2C, NUNCHUCK_I2C_HZ);
   gpio_set_function(NUNCHUCK_SDA, GPIO_FUNC_I2C);
   gpio_set_function(NUNCHUCK_SCL, GPIO_FUNC_I2C);
   gpio_pull_up(NUNCHUCK_SDA);
   gpio_pull_up(NUNCHUCK_SCL);
 
+  lcd_irq_hold(true);
   nunchuck_ready = false;
-  if (!nunchuck_write2(0xF0, 0x55)) return;
-  sleep_ms(10);
-  if (!nunchuck_write2(0xFB, 0x00)) return;
-  sleep_ms(10);
-  if (!nunchuck_write2(0xFE, 0x03)) return;
-  sleep_ms(10);
-  nunchuck_ready = true;
+  if (nunchuck_write2(0xF0, 0x55)) {
+    sleep_ms(10);
+    if (nunchuck_write2(0xFB, 0x00)) {
+      sleep_ms(10);
+      nunchuck_ready = nunchuck_write2(0xFE, 0x03);
+    }
+  }
+  lcd_irq_hold(false);
+#if NUNCHUCK_DEBUG
+  printf("nunchuck init %s\n", nunchuck_ready ? "done" : "failed");
+#endif
 }
 
 static bool nunchuck_read(uint8_t *data) {
@@ -104,17 +133,34 @@ static bool nunchuck_read(uint8_t *data) {
     sleep_us(200);
     ok = i2c_read_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, data, 8, false, NUNCHUCK_TIMEOUT_US) == 8;
   }
-  if (!ok)
+  if (!ok) {
     nunchuck_ready = false;
+#if NUNCHUCK_DEBUG
+    printf("nunchuck read failed\n");
+#endif
+  }
   return ok;
 }
+
+#if NUNCHUCK_DEBUG
+// Counted in RAM and printed every 2 s, so the output doesn't change the
+// timing around a button press
+static unsigned dbg_reads, dbg_read_fails, dbg_up_reads, dbg_up_events, dbg_dropped;
+static uint8_t dbg_up_raw[8];
+#endif
 
 static void nunchuck_post(bool &state, int code, bool new_state) {
   if (state != new_state) {
     event_t ev;
     ev.type = new_state ? EV_PRESS : EV_RELEASE;
     ev.code = code;
-    ev_postevent(&ev);
+    int posted = ev_postevent(&ev);
+#if NUNCHUCK_DEBUG
+    if (!posted) dbg_dropped++;
+    if (code == K_JOYUP && new_state) dbg_up_events++;
+#else
+    (void)posted;
+#endif
     state = new_state;
   }
 }
@@ -127,19 +173,32 @@ static void update_nunchuck() {
   last_poll = now;
 
   uint8_t data[8];
-  if (!nunchuck_read(data))
-    return;
+  bool ok = nunchuck_read(data);
 
 #if NUNCHUCK_DEBUG
-  // Print the raw button bytes (active low) over USB serial when they change
-  static uint8_t last6 = 0xFF, last7 = 0xFF;
-  if (data[6] != last6 || data[7] != last7) {
-    printf("nunchuck: %02x %02x %02x %02x %02x %02x | b6 %02x b7 %02x\n",
-           data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]);
-    last6 = data[6];
-    last7 = data[7];
+  if (ok) {
+    dbg_reads++;
+    if (!(data[7] & 0x01)) {
+      dbg_up_reads++;
+      memcpy(dbg_up_raw, data, sizeof dbg_up_raw);
+    }
+  } else {
+    dbg_read_fails++;
+  }
+  static uint32_t dbg_print_at = 0;
+  if ((int32_t)(now - dbg_print_at) >= 0) {
+    dbg_print_at = now + 2000;
+    printf("nunchuck: %u reads, %u failed, %u with Up, %u Up presses posted, %u events dropped",
+           dbg_reads, dbg_read_fails, dbg_up_reads, dbg_up_events, dbg_dropped);
+    if (dbg_up_reads)
+      printf(" | last Up read %02x %02x %02x %02x %02x %02x b6 %02x b7 %02x", dbg_up_raw[0],
+             dbg_up_raw[1], dbg_up_raw[2], dbg_up_raw[3], dbg_up_raw[4], dbg_up_raw[5],
+             dbg_up_raw[6], dbg_up_raw[7]);
+    printf("\n");
   }
 #endif
+  if (!ok)
+    return;
 
   // 8-bit format: bytes 0-5 are joystick/axis data (unused for NES Mini),
   // buttons are active low in bytes 6 and 7

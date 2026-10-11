@@ -29,7 +29,18 @@ NES Mini Classic clone via I2C0 at 100 kHz:
   released and sends a STOP (`i2c_bus_recover()`); all transfers time out after 10 ms.
 - The GPIO buttons (pins 2, 15-21) collide with the ResTouch's LCD reset, touch and SDIO
   lines and are off unless built with `INPUT_GPIO_BUTTONS=1`.
-- `-DNUNCHUCK_DEBUG=ON` (CMake option) prints the raw controller bytes over USB serial.
+- `-DNUNCHUCK_DEBUG=ON` (CMake option) prints failed transfers and, every 2 s, counters
+  (reads, failed reads, reads with Up, Up presses posted, dropped events) over USB serial.
+
+### Init on the ResTouch with the 1.5x scaling
+With the scaling on, the LCD's DMA interrupt fires once per scanline, and the controller
+refused most init writes (`nunchuck init: 0 of 3 writes acknowledged`). What made it work:
+- 10 ms between the init writes, each write tried up to 5 times, and the whole init
+  repeated every 500 ms while it fails or after a failed read (`nunchuck_ready`).
+- `DMA_IRQ_0` held back while the init is sent (`lcd_irq_hold()`).
+- `PICO_CLOCK_ADJUST_PERI_CLOCK_WITH_SYS_CLOCK=1` (CMakeLists.txt): keeps `clk_peri` on
+  `clk_sys` after `set_sys_clock_khz()`. Not proven to be needed, kept from the build
+  that worked.
 
 ### Init sequence (order matters)
 1. `{0xF0, 0x55}`
@@ -64,9 +75,16 @@ Key file: `src/emu.c`
 ## Known issues
 
 - A small number of original GB games cannot be unpaused — the game disables the LCD during its pause screen, causing the emulator loop to stall. GBC games are unaffected.
-- Pressing Left on the NES Mini controller sometimes also triggers Up (parked). The byte
-  decoding and key bindings were checked; the same controller works in infoNES. Next step:
-  a `NUNCHUCK_DEBUG` build to look at the raw bytes.
+- Pressing Left on the NES Mini controller sometimes also triggers Up (parked, not fixed).
+  The controller itself reports it: byte 7 reads `fc` (Up + Left) instead of `fd` (Left)
+  for one or two reads (20-40 ms) while Left is held, never Up alone. A standalone I2C test
+  without LCD or emulator (uf2loader session 2026-10-11) showed it at 100 kHz (12, 0 and 6
+  reads with Up per 20 s phase) and at 20 kHz (0 and 4), so it's not the bus speed or
+  pull-ups, nor GNUBoy's event path (debug counters: Up presses posted only after Up reads,
+  no dropped events). Probably the d-pad rocking onto Up. infoNES gets the same data, its
+  games just don't show it as much. Not yet tried: a second controller. Possible fix: accept
+  Up/Down while Left/Right is held only after ~3 equal reads (~50 ms), which filters the
+  blips and delays real diagonals.
 
 ## Build
 

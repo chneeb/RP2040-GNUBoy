@@ -64,6 +64,11 @@ target_link_libraries(${TARGET_NAME} PicoRail)
 
 pico_enable_stdio_usb(${TARGET_NAME} 1)
 
+# The SDK moves clk_peri (and with it the I2C block) to the 48 MHz USB PLL
+# when main() sets the system clock. Keep it on the system clock as infoNES
+# does: the NES Mini controller on the ResTouch was only seen working that way.
+target_compile_definitions(${TARGET_NAME} PRIVATE PICO_CLOCK_ADJUST_PERI_CLOCK_WITH_SYS_CLOCK=1)
+
 option(NUNCHUCK_DEBUG "Print the raw NES Mini controller bytes over USB serial" OFF)
 if (NUNCHUCK_DEBUG)
   target_compile_definitions(${TARGET_NAME} PRIVATE NUNCHUCK_DEBUG=1)
