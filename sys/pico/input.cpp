@@ -55,6 +55,20 @@ static void i2c_bus_recover() {
   sleep_us(5);
 }
 
+// True once the controller accepted the init sequence. Until then (or after a
+// failed read) nunchuck_read() repeats the init every NUNCHUCK_RETRY_MS, so a
+// controller that missed it at startup, or is plugged in later, still works.
+static bool nunchuck_ready = false;
+#define NUNCHUCK_RETRY_MS 500
+
+static bool nunchuck_write2(uint8_t reg, uint8_t value) {
+  uint8_t buf[2] = {reg, value};
+  return i2c_write_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, buf, 2, false, NUNCHUCK_TIMEOUT_US) == 2;
+}
+
+// Unencrypted init, then data format 3 (8 byte reports, buttons in bytes 6
+// and 7). The controller needs time between the writes; 1 ms was too short
+// for some of them, and a missed write left it in another format for good.
 static void nunchuck_init() {
   i2c_bus_recover();
   i2c_init(NUNCHUCK_I2C, 100000);
@@ -63,25 +77,36 @@ static void nunchuck_init() {
   gpio_pull_up(NUNCHUCK_SDA);
   gpio_pull_up(NUNCHUCK_SCL);
 
-  uint8_t buf[2] = {0xF0, 0x55};
-  i2c_write_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, buf, 2, false, NUNCHUCK_TIMEOUT_US);
-  sleep_ms(1);
-  buf[0] = 0xFB; buf[1] = 0x00;
-  i2c_write_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, buf, 2, false, NUNCHUCK_TIMEOUT_US);
-  sleep_ms(1);
-  buf[0] = 0xFE; buf[1] = 0x03;
-  i2c_write_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, buf, 2, false, NUNCHUCK_TIMEOUT_US);
-  sleep_ms(100);
-
-
+  nunchuck_ready = false;
+  if (!nunchuck_write2(0xF0, 0x55)) return;
+  sleep_ms(10);
+  if (!nunchuck_write2(0xFB, 0x00)) return;
+  sleep_ms(10);
+  if (!nunchuck_write2(0xFE, 0x03)) return;
+  sleep_ms(10);
+  nunchuck_ready = true;
 }
 
 static bool nunchuck_read(uint8_t *data) {
+  if (!nunchuck_ready) {
+    static uint32_t retry_at = 0;
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    if ((int32_t)(now - retry_at) < 0)
+      return false;
+    retry_at = now + NUNCHUCK_RETRY_MS;
+    nunchuck_init();
+    if (!nunchuck_ready)
+      return false;
+  }
   uint8_t req = 0x00;
-  if (i2c_write_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, &req, 1, false, NUNCHUCK_TIMEOUT_US) < 0)
-    return false;
-  sleep_us(200);
-  return i2c_read_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, data, 8, false, NUNCHUCK_TIMEOUT_US) == 8;
+  bool ok = i2c_write_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, &req, 1, false, NUNCHUCK_TIMEOUT_US) == 1;
+  if (ok) {
+    sleep_us(200);
+    ok = i2c_read_timeout_us(NUNCHUCK_I2C, NUNCHUCK_ADDR, data, 8, false, NUNCHUCK_TIMEOUT_US) == 8;
+  }
+  if (!ok)
+    nunchuck_ready = false;
+  return ok;
 }
 
 static void nunchuck_post(bool &state, int code, bool new_state) {
