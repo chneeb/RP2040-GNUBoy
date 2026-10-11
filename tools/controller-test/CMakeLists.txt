@@ -5,7 +5,7 @@ include(pico_sdk_import.cmake)
 project(controller_test C CXX ASM)
 pico_sdk_init()
 
-foreach(tool i2cscan padtest)
+foreach(tool i2cscan padtest padtest2)
   add_executable(${tool} ${tool}.c)
   target_link_libraries(${tool} pico_stdlib hardware_i2c)
   pico_enable_stdio_usb(${tool} 1)

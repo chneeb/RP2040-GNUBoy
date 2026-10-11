@@ -45,17 +45,22 @@ refused most init writes (`nunchuck init: 0 of 3 writes acknowledged`). What mad
 ### Controller tests (`tools/controller-test/`)
 Standalone UF2s without LCD or emulator, output over USB serial, for i2c0 GP4/5:
 - `i2cscan`: line levels, bus scan, init result and raw reads, every 2 s.
+- `padtest2`: like `padtest`, but cycles through read timings (format 3 with 200 us or
+  1000 us between request and read, or pipelined: read the answer to the previous
+  poll's request) and prints totals of Left, Up+Left and Up alone per timing.
 - `padtest`: polls every 16 ms like the emulator, prints b6/b7 with button names on
   each change; the I2C speed alternates every 20 s between 100 and 20 kHz, with totals.
 ```bash
 cmake -S tools/controller-test -B build-tools -DPICO_BOARD=pico2 -DPICO_SDK_PATH=~/Source/pico-sdk
-make -C build-tools -j$(nproc)   # build-tools/padtest.uf2, build-tools/i2cscan.uf2
+make -C build-tools -j$(nproc)   # build-tools/padtest.uf2, padtest2.uf2, i2cscan.uf2
 ```
 
 ### Init sequence (order matters)
 1. `{0xF0, 0x55}`
 2. `{0xFB, 0x00}`
-3. `{0xFE, 0x03}` — required for this clone
+3. `{0xFE, 0x03}` — required for this clone. It doesn't support format 1 (`0xFE, 0x01`,
+   the standard 6 byte Wii Classic report): it answers with format 3's first 6 bytes
+   (`81 81 81 81 00 00`), so every button reads as pressed (padtest2, 2026-10-11).
 
 ### Read protocol
 - Write `0x00` to request data
@@ -85,7 +90,7 @@ Key file: `src/emu.c`
 ## Known issues
 
 - A small number of original GB games cannot be unpaused — the game disables the LCD during its pause screen, causing the emulator loop to stall. GBC games are unaffected.
-- Pressing Left on the NES Mini controller sometimes also triggers Up (parked, not fixed).
+- Pressing Left on the NES Mini controller sometimes also triggers Up (parked, gone for now).
   The controller itself reports it: byte 7 reads `fc` (Up + Left) instead of `fd` (Left)
   for one or two reads (20-40 ms) while Left is held, never Up alone. A standalone I2C test
   without LCD or emulator (uf2loader session 2026-10-11) showed it at 100 kHz (12, 0 and 6
@@ -97,6 +102,10 @@ Key file: `src/emu.c`
   dropped (2026-10-11): Up/Down while Left/Right was held (or seen within the last reads)
   only counted after 3, then 5 equal reads in a row. It made the false Up rarer but never
   removed it, so the blips are sometimes longer than a real diagonal should have to wait.
+  Later the same day the blips stopped, both in GNUBoy and in `padtest2` (0 Up+Left in
+  about 1500 Left reads per timing), probably the d-pad contacts wearing in after hours of
+  testing. Not seen in this state: whether a timing in `padtest2` avoids them. If they come
+  back, run `padtest2` for 5-10 min and compare its timings first.
 
 ## Build
 
