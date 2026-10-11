@@ -42,6 +42,16 @@ refused most init writes (`nunchuck init: 0 of 3 writes acknowledged`). What mad
   `clk_sys` after `set_sys_clock_khz()`. Not proven to be needed, kept from the build
   that worked.
 
+### Controller tests (`tools/controller-test/`)
+Standalone UF2s without LCD or emulator, output over USB serial, for i2c0 GP4/5:
+- `i2cscan`: line levels, bus scan, init result and raw reads, every 2 s.
+- `padtest`: polls every 16 ms like the emulator, prints b6/b7 with button names on
+  each change; the I2C speed alternates every 20 s between 100 and 20 kHz, with totals.
+```bash
+cmake -S tools/controller-test -B build-tools -DPICO_BOARD=pico2 -DPICO_SDK_PATH=~/Source/pico-sdk
+make -C build-tools -j$(nproc)   # build-tools/padtest.uf2, build-tools/i2cscan.uf2
+```
+
 ### Init sequence (order matters)
 1. `{0xF0, 0x55}`
 2. `{0xFB, 0x00}`
