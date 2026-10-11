@@ -93,9 +93,10 @@ Key file: `src/emu.c`
   pull-ups, nor GNUBoy's event path (debug counters: Up presses posted only after Up reads,
   no dropped events). Probably the d-pad rocking onto Up. infoNES gets the same data, its
   games just don't show it as much. A second controller of the same clone model does it too, so it's the model (d-pad or
-  firmware), not one worn pad; an original Nintendo controller hasn't been tried. Possible fix: accept
-  Up/Down while Left/Right is held only after ~3 equal reads (~50 ms), which filters the
-  blips and delays real diagonals.
+  firmware), not one worn pad; an original Nintendo controller hasn't been tried. A filter was tried and
+  dropped (2026-10-11): Up/Down while Left/Right was held (or seen within the last reads)
+  only counted after 3, then 5 equal reads in a row. It made the false Up rarer but never
+  removed it, so the blips are sometimes longer than a real diagonal should have to wait.
 
 ## Build
 
